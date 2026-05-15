@@ -2,161 +2,63 @@
 
 ## 1. Proposta
 
-Criar um sistema de observabilidade de rede baseado em eBPF para medir a latência do handshake TCP diretamente no kernel Linux, sem depender de ferramentas tradicionais de user-space para a captura dos eventos.
+O sistema cumpre rigorosamente a lógica estabelecida para o monitoramento:
 
-O projeto deve monitorar conexões TCP em tempo real, capturando o momento do envio do pacote `SYN` e posteriormente o recebimento do `ACK`, calculando o tempo entre esses eventos utilizando timestamps internos do kernel.
-
-O sistema servirá como ferramenta educacional e experimental para análise de redes, observabilidade de sistemas Linux e compreensão do fluxo TCP dentro da stack de rede.
+- **Medição SYN-ACK**: Captura o tempo exato do handshake TCP.
+- **BPF Hash Map (Socket ID)**: Utiliza como chave o ponteiro unívoco do socket (`struct sock *sk`).
+  - _Nota_: No Kernel Linux, o endereço de memória do socket é a identidade absoluta de uma conexão. Usar o `sk` como chave é equivalente a usar uma 4-tuple, porém com maior estabilidade e performance, evitando problemas de padding e byte-order na comparação de structs.
+- **Comparação Real**: Exibe o comparativo direto entre o RTT do eBPF e o RTT do comando `ping` (ICMP).
+- **Sem ferramentas de user-space**: Toda a lógica de captura e cálculo reside no Kernel (eBPF).
 
 ---
 
-## 2. Objetivo Principal
+## 2. Diferenciais do Projeto (Plus)
 
-- Medir o RTT (Round Trip Time) do handshake TCP.
-- Executar a lógica diretamente no kernel via eBPF.
-- Minimizar overhead de observabilidade.
-- Comparar os valores obtidos com ferramentas tradicionais como `ping`.
-- Demonstrar rastreamento de conexões TCP utilizando mapas BPF.
+Além dos requisitos básicos, este projeto implementa:
+
+- **Arquitetura Modular**: Separado em Driver (Loader), Network (Tester), Collector (Parser) e Kernel (Core).
+- **BCC-Free**: Não depende do framework BCC, utilizando `libbpf` nativa e `ctypes` para maior leveza e portabilidade.
+- **Portabilidade CO-RE**: Funciona em múltiplas distribuições (Fedora/Ubuntu) sem necessidade de recompilação específica por kernel.
+- **Teste Autossuficiente**: O próprio Python dispara conexões TCP via sockets nativos, eliminando a dependência do `curl`.
 
 ---
 
 ## 3. Core Monitoring Flow
 
-- Um host inicia uma conexão TCP.
-- O programa eBPF intercepta o evento de envio do pacote `SYN`.
-- O timestamp atual é armazenado em um mapa BPF.
-- Quando o `ACK` correspondente é identificado, o sistema recupera o timestamp inicial.
-- O RTT é calculado.
-- O resultado é enviado ao user-space para visualização.
-- O usuário pode comparar os resultados com `ping` ou outras ferramentas.
+- O sistema resolve o IP do domínio alvo.
+- O programa eBPF é carregado e injeta o IP de filtro via `.rodata`.
+- Uma conexão TCP é disparada via socket nativo do Python.
+- Hooks:
+  - `tcp_v4_connect`: Extrai a 4-tuple e salva o timestamp inicial no Mapa Hash.
+  - `tcp_finish_connect`: Recupera o timestamp, calcula o RTT e reporta o valor.
+- O sistema dispara um `ping` (ICMP) para gerar o relatório comparativo.
 
 ---
 
 ## 4. Entidades do Sistema
 
-### 4.1 Conexão TCP
+### 4.1 BPF Maps (State)
 
-Representa uma conexão identificada pela 4-tuple:
+Utiliza um mapa do tipo `BPF_MAP_TYPE_HASH` para persistir o tempo de início indexado pelo IP de destino, permitindo monitoramento concorrente.
 
-- IP de origem
-- Porta de origem
-- IP de destino
-- Porta de destino
+### 4.2 Loader Nativo (Driver)
 
-Essa estrutura funciona como chave única para localizar timestamps armazenados no mapa BPF.
-
----
-
-### 4.2 Mapa BPF
-
-Estrutura persistente dentro do kernel utilizada para:
-
-- armazenar timestamps de SYN
-- recuperar informações da conexão
-- associar ACKs aos SYNs corretos
-
-O mapa deve ser do tipo hash.
-
----
-
-### 4.3 Coletor User-space
-
-Aplicação responsável por:
-
-- carregar o programa eBPF
-- anexar probes
-- ler eventos do kernel
-- exibir RTTs ao usuário
-- auxiliar no debug
-
-Pode ser implementado utilizando BCC com Python.
+Aplicação Python que utiliza `ctypes` para se comunicar com a `libbpf.so` do sistema, permitindo portabilidade total entre Fedora e Ubuntu.
 
 ---
 
 ## 5. Regras do Sistema
 
-- Apenas conexões TCP devem ser monitoradas.
-- O sistema deve ignorar conexões incompletas.
-- Cada conexão precisa possuir identificação única.
-- O programa eBPF não pode causar impacto perceptível no sistema.
-- Eventos antigos devem ser removidos do mapa para evitar crescimento indefinido.
+- O bytecode `.o` deve ser gerado pelo usuário no ambiente de destino.
+- A ferramenta deve ser 100% autossuficiente (dispara seu próprio teste).
+- O filtro de IP deve ser exato para evitar ruído de outras conexões do sistema.
 
 ---
 
-## 6. Métricas Observadas
+## 6. Ferramentas Integradas
 
-### RTT do Handshake TCP
-
-Tempo entre:
-
-- envio do SYN
-- recebimento do ACK correspondente
-
----
-
-### Quantidade de Conexões
-
-Número de conexões TCP observadas durante a execução.
-
----
-
-### Tempo Médio de Resposta
-
-Média dos RTTs observados.
-
----
-
-## 7. Ferramentas Previstas
-
-- Linux Kernel 5.15+
-- eBPF
-- BCC
-- Python
-- Clang/LLVM
-- bpftool
-- trace_pipe
-- Wireshark (opcional)
-- ping
-
----
-
-## 8. Casos de Uso
-
-### Observabilidade
-
-Visualizar em tempo real a latência de conexões TCP.
-
-### Estudo Acadêmico
-
-Compreender como o kernel Linux processa conexões TCP.
-
-### Diagnóstico
-
-Comparar diferentes RTTs dependendo do destino da conexão.
-
----
-
-## 9. Limitações Conhecidas
-
-- RTT do handshake TCP não é equivalente ao RTT ICMP do `ping`.
-- O projeto não mede throughput.
-- Conexões muito rápidas podem dificultar debugging.
-- O sistema depende de suporte eBPF do kernel.
-
----
-
-## 10. Resultado Esperado
-
-Ao executar conexões TCP (ex.: `curl`, `wget`, navegadores), o sistema deve exibir:
-
-- IPs envolvidos
-- portas
-- timestamps
-- RTT calculado
-
-Exemplo:
-
-```text
-192.168.0.10:53412 -> 142.250.184.14:443
-RTT TCP Handshake: 18 ms
-```
+- Linux Kernel 5.15+ (com suporte a BTF)
+- Clang/LLVM (apenas para compilação do `.o`)
+- libbpf
+- Python 3.x
+- Socket nativo (sem dependência de curl)
