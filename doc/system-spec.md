@@ -147,25 +147,30 @@ struct event_t {
 };
 ```
 
-Estrutura enviada ao user-space.
+## 4. Kernel Data Model
+
+Para rastrear o RTT, utilizamos um Mapa BPF do tipo `HASH`.
+
+#### Estrutura do Mapa:
+- **Tipo**: `BPF_MAP_TYPE_HASH`
+- **Chave**: `u64` (Endereço de memória do ponteiro `struct sock *sk`).
+- **Valor**: `u64` (Timestamp em nanossegundos).
+
+> **Decisão de Projeto**: Optamos por usar o ponteiro do socket (`sk`) como chave em vez de uma struct de 4-tuple para garantir resiliência contra colisões de portas efêmeras e simplificar a lógica de busca entre os hooks de início e fim. O socket pointer é o identificador único por excelência no stack TCP do Linux.
 
 ---
 
-## 5. Hooking Strategy
+## 5. Hook Points (eBPF)
 
-O sistema deve interceptar funções/eventos relacionados ao ciclo TCP.
+O monitor utiliza dois Kprobes principais:
 
-Possíveis hooks:
-
-- `tcp_v4_connect`
-- `tcp_rcv_state_process`
-- tracepoints TCP
-
-A escolha final depende:
-
-- estabilidade
-- simplicidade
-- compatibilidade com o kernel
+1.  **`tcp_v4_connect`**: 
+    - Disparado no início da tentativa de conexão.
+    - Filtra pelo IP alvo informado.
+    - Salva o `bpf_ktime_get_ns()` no mapa usando o ponteiro do socket como identificador.
+2.  **`tcp_finish_connect`**: 
+    - Disparado quando o handshake é concluído com sucesso (recebimento do ACK).
+    - Recupera o timestamp inicial, calcula o delta e reporta via `bpf_trace_printk`.
 
 ---
 
