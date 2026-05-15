@@ -7,7 +7,7 @@ O sistema é uma ferramenta de observabilidade baseada em eBPF que executa progr
 A arquitetura utiliza:
 
 - programas eBPF em C executando no kernel
-- aplicação user-space em Python utilizando BCC
+- aplicação user-space em Python utilizando libbpf via ctypes (BCC-free)
 - mapas BPF para persistência temporária de estado
 
 O sistema segue um modelo orientado a eventos baseado em hooks da stack TCP do kernel.
@@ -54,7 +54,7 @@ Responsável por:
 
 Implementação prevista:
 
-- Python + BCC
+- Python + ctypes + libbpf
 
 ---
 
@@ -107,45 +107,28 @@ Kernel mínimo:
 
 ## 4. Data Model
 
-### Connection Key (4-tuple)
+### Connection Key (Socket Pointer)
+
+Em vez de uma struct manual de 4-tuple, o sistema utiliza o identificador nativo do Kernel:
 
 ```c
-struct conn_key_t {
-    u32 saddr;
-    u32 daddr;
-    u16 sport;
-    u16 dport;
-};
+typedef u64 connection_key_t; // Endereço de memória da struct sock *sk
 ```
 
-A estrutura identifica unicamente uma conexão TCP.
+**Vantagem Técnica**: 
+Diferente da 4-tuple (IPs e Portas), o ponteiro do objeto `sock` no Kernel é garantidamente único para uma conexão ativa. Isso evita problemas de colisão em cenários de alta frequência e garante que o timestamp recuperado no final do handshake pertença exatamente à mesma instância de conexão iniciada.
 
 ---
 
 ### Timestamp Map
 
-```c
-BPF_HASH(start, struct conn_key_t, u64);
-```
-
-Armazena:
-
-- chave da conexão
-- timestamp do SYN
+Utiliza um mapa `BPF_MAP_TYPE_HASH` indexado pelo ponteiro do socket (`u64 sk`) para armazenar o timestamp de início (`u64 ns`).
 
 ---
 
-### Event Structure
+### Event Data (Reporting)
 
-```c
-struct event_t {
-    u32 saddr;
-    u32 daddr;
-    u16 sport;
-    u16 dport;
-    u64 rtt_ns;
-};
-```
+Os dados reportados incluem a latência calculada e os endereços IP (4-tuple) extraídos diretamente do objeto `sock` no momento da conclusão do handshake.
 
 ## 4. Kernel Data Model
 
@@ -201,9 +184,9 @@ Exibição no terminal
 ## 7. User-space Flow
 
 ```text
-Python Loader
+Python Driver (ctypes)
     ↓
-BCC compila programa eBPF
+Libbpf carrega monitor.bpf.o
     ↓
 Programa carregado no kernel
     ↓
