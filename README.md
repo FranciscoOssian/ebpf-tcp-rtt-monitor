@@ -1,6 +1,6 @@
-# eBPF TCP Handshake RTT Monitor (BCC-free)
+# eBPF TCP Handshake RTT Monitor
 
-Este projeto é uma ferramenta de observabilidade de rede de baixo nível que utiliza **eBPF CO-RE (Compile Once - Run Everywhere)** para medir a latência do handshake TCP diretamente no kernel Linux.
+Este projeto é uma ferramenta de observabilidade de rede de baixo nível que utiliza **eBPF** para medir a latência do handshake TCP diretamente no kernel Linux.
 
 O diferencial deste projeto é a **independência de frameworks pesados como o BCC**, utilizando uma arquitetura modular em Python que se comunica nativamente com a `libbpf`.
 
