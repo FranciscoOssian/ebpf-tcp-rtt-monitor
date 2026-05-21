@@ -23,18 +23,22 @@ Para que o projeto funcione em qualquer distro, você precisa:
 
 ## 3. Como Rodar e Testar
 
+### Passo 1: Depêndencias
+
+Instale as depêndencias necessárias para compilar e rodar, no caso o clang, llvm, libbpf bpf e o python.
+
 ### Passo 1: Gerar o Cabeçalho do Kernel (vmlinux.h)
 
 Se você ainda não tem o arquivo `vmlinux.h` na pasta `src/kernel`, gere-o com:
 
 ```bash
-bpftool btf dump file /sys/kernel/btf/vmlinux format c > src/kernel/vmlinux.h
+make vmlinux
 ```
 
 ### Passo 2: Compilar o Bytecode eBPF
 
 ```bash
-clang -g -O2 -target bpf -D__TARGET_ARCH_x86 -c src/kernel/monitor.bpf.c -o src/kernel/monitor.bpf.o
+make
 ```
 
 ### Passo 3: Executar o Monitor
@@ -43,6 +47,18 @@ O script vai resolver o domínio, injetar o IP no filtro do kernel, disparar uma
 
 ```bash
 sudo python3 main.py google.com
+```
+
+Caso tenha uma porta específica:
+
+```bash
+sudo python3 main.py google.com 443
+```
+
+Ou caso queira usar o próprio makefile:
+
+```bash
+make run DOMAIN=google.com
 ```
 
 ## 4. Por que funciona em várias distros?
