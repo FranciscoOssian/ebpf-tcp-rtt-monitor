@@ -3,9 +3,10 @@ import struct
 import subprocess
 import re
 
+
 class NetworkTester:
     """Dispara tráfego de rede (TCP e ICMP) para validação do monitor."""
-    
+
     def __init__(self, domain):
         self.domain = domain
         self.ip = self._resolve()
@@ -21,26 +22,34 @@ class NetworkTester:
         """Retorna o IP no formato inteiro (Network Byte Order) para o Kernel."""
         return struct.unpack("=I", socket.inet_aton(self.ip))[0]
 
-    def trigger_test(self):
-        """Dispara uma conexão TCP real para o alvo para ativar os hooks eBPF."""
-        print(f"[+] Disparando conexão TCP nativa para {self.domain} (IP: {self.ip})...")
+    def trigger_test(self, port=80):
+        """Dispara uma conexão TCP real para ativar o tracepoint eBPF."""
+        print(f"[+] Conectando TCP em {self.domain} ({self.ip}:{port})...")
         try:
-            # Tenta conectar na porta 80 (HTTP) para gerar o handshake
-            with socket.create_connection((self.ip, 80), timeout=2):
-                print("[+] Conexão TCP estabelecida (Handshake completo).")
+            with socket.create_connection((self.ip, port), timeout=5):
+                print("[+] Handshake TCP completo.")
                 return True
-        except Exception:
-            print("[!] Aviso: Conexão não completou, mas o SYN foi disparado.")
+        except socket.timeout:
+            print("[!] Timeout na conexão TCP.")
+            return False
+        except ConnectionRefusedError:
+            print("[!] Conexão recusada.")
+            return False
+        except Exception as e:
+            print(f"[!] Erro na conexão: {e}")
             return False
 
-    def run_ping(self):
-        """Executa um ping real (ICMP) para fornecer um valor de comparação."""
-        print(f"[+] Disparando ICMP Ping para comparação...")
+    def run_ping(self, count=3):
+        """Executa ping ICMP para comparação de latência."""
+        print(f"[+] Executando ping para {self.domain}...")
         try:
-            output = subprocess.check_output(["ping", "-c", "3", self.domain], stderr=subprocess.STDOUT).decode()
-            match = re.search(r"min/avg/max/mdev = [\d\.]+/([\d\.]+)/[\d\.]+/", output)
+            output = subprocess.check_output(
+                ["ping", "-c", str(count), self.domain],
+                stderr=subprocess.STDOUT, timeout=10
+            ).decode()
+            match = re.search(r"min/avg/max/mdev = [\d\.]+/([\d\.]+)/", output)
             if match:
                 return f"{match.group(1)} ms"
-        except Exception:
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
             pass
         return "Indisponível"
