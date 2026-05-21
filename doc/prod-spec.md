@@ -5,8 +5,8 @@
 O sistema cumpre rigorosamente a lógica estabelecida para o monitoramento:
 
 - **Medição SYN-ACK**: Captura o tempo exato do handshake TCP.
-- **BPF Hash Map (Socket ID)**: Utiliza como chave o ponteiro unívoco do socket (`struct sock *sk`).
-  - _Nota_: No Kernel Linux, o endereço de memória do socket é a identidade absoluta de uma conexão. Usar o `sk` como chave é equivalente a usar uma 4-tuple, porém com maior estabilidade e performance, evitando problemas de padding e byte-order na comparação de structs.
+- **BPF Hash Map (4-tuple)**: Utiliza a `struct four_tuple` (IPs e Portas de origem/destino) como chave na exportação de resultados.
+  - _Nota_: Utilizar a 4-tuple atende aos requisitos do projeto de observabilidade de redes ao manter a rastreabilidade exata do fluxo TCP, extraindo os dados de rede essenciais do socket assim que o handshake terminar. O ponteiro de socket `sk` continua auxiliando internamente no acompanhamento de tempo entre SYN e ACK.
 - **Comparação Real**: Exibe o comparativo direto entre o RTT do eBPF e o RTT do comando `ping` (ICMP).
 - **Sem ferramentas de user-space**: Toda a lógica de captura e cálculo reside no Kernel (eBPF).
 
