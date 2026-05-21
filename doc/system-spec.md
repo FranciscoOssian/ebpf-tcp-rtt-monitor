@@ -107,16 +107,21 @@ Kernel mínimo:
 
 ## 4. Data Model
 
-### Connection Key (Socket Pointer)
+### Connection Key (4-tuple)
 
-Em vez de uma struct manual de 4-tuple, o sistema utiliza o identificador nativo do Kernel:
+O sistema utiliza a estrutura de 4-tuple como chave para reportar os resultados monitorados, garantindo rastreabilidade completa:
 
 ```c
-typedef u64 connection_key_t; // Endereço de memória da struct sock *sk
+struct four_tuple {
+	__u32 saddr;
+	__u32 daddr;
+	__u16 sport;
+	__u16 dport;
+};
 ```
 
-**Vantagem Técnica**: 
-Diferente da 4-tuple (IPs e Portas), o ponteiro do objeto `sock` no Kernel é garantidamente único para uma conexão ativa. Isso evita problemas de colisão em cenários de alta frequência e garante que o timestamp recuperado no final do handshake pertença exatamente à mesma instância de conexão iniciada.
+**Decisão Técnica**: 
+A 4-tuple (Endereços IP e Portas de origem e destino) é extraída do objeto `sock` no Kernel logo que o handshake finaliza. Esta abordagem cumpre os requisitos do projeto, estabelecendo a identidade de rede comum (fluxo TCP) para que as informações sejam reportáveis ao user-space. Internamente, apenas para transição de estados do handshake antes da porta de origem estar disponível, o ponteiro do socket (`sk`) atua de maneira auxiliar rápida.
 
 ---
 
@@ -134,12 +139,18 @@ Os dados reportados incluem a latência calculada e os endereços IP (4-tuple) e
 
 Para rastrear o RTT, utilizamos um Mapa BPF do tipo `HASH`.
 
-#### Estrutura do Mapa:
-- **Tipo**: `BPF_MAP_TYPE_HASH`
-- **Chave**: `u64` (Endereço de memória do ponteiro `struct sock *sk`).
-- **Valor**: `u64` (Timestamp em nanossegundos).
+#### Estrutura dos Mapas:
+1. **Mapa Temporário (`syn_ts`)**:
+   - **Tipo**: `BPF_MAP_TYPE_HASH`
+   - **Chave**: `u64` (Ponteiro do socket `sk`)
+   - **Valor**: `u64` (Timestamp do SYN em ns)
 
-> **Decisão de Projeto**: Optamos por usar o ponteiro do socket (`sk`) como chave em vez de uma struct de 4-tuple para garantir resiliência contra colisões de portas efêmeras e simplificar a lógica de busca entre os hooks de início e fim. O socket pointer é o identificador único por excelência no stack TCP do Linux.
+2. **Mapa de Resultados (`rtt_results`)**:
+   - **Tipo**: `BPF_MAP_TYPE_HASH`
+   - **Chave**: `struct four_tuple` (IPs e portas)
+   - **Valor**: `u64` (RTT em microssegundos)
+
+> **Decisão de Projeto**: Optamos por usar a `struct four_tuple` no mapa de resultados final (`rtt_results`) por ser uma métrica que o projeto precisa para fornecer observabilidade completa em cima da conexão TCP. O timestamp de SYN utiliza o socket pointer (`sk`) de forma otimizada para fins meramente efêmeros (o que torna a busca rápida até a construção ser finalizada).
 
 ---
 

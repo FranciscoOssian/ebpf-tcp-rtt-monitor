@@ -76,9 +76,3 @@ O projeto utiliza uma estratégia de **Kprobes** para garantir a precisão:
 1. **`tcp_v4_connect`**: Captura o início do handshake.
 2. **`tcp_finish_connect`**: Captura a conclusão do handshake (recebimento do ACK).
 
-### Chave de Mapa (Nota Técnica para o Professor)
-
-Diferente da abordagens que utilizam uma struct de 4-tuple como chave, este projeto utiliza o **ponteiro do socket (`struct sock *sk`)** como identificador único.
-
-- **Vantagem**: O ponteiro `sk` é a identidade definitiva da conexão no kernel. Isso elimina problemas de colisões em conexões efêmeras e garante 100% de estabilidade na recuperação dos timestamps entre o início e o fim do handshake.
-- **Conformidade**: Os dados de IP e Porta são extraídos e reportados, cumprindo o objetivo de observabilidade da 4-tuple.
